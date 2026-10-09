@@ -11,7 +11,7 @@ gzip/bzip2 outputs are compared by compression type plus decompressed content.
   chromosomes; single-end reads of lengths 100 and 75 plus random reads; paired
   reads; FASTA reads).
 - `parity.py`: the comparison harness. The case list (`CASES`) covers plain,
-  gzip and FASTA input, stdin, comma lists, `-c`, attached `-1`/`-2`, the
+  gzip, bzip2 and FASTA input, stdin, comma lists, `-c`, attached `-1`/`-2`, the
   read-length check, `--un`/`--al`/`--un-conc`/`--al-conc`/`--al-conc-disc`
   (plain, `-gz`, `-bz2`, `%` / extension / directory targets), `--no-unal`,
   small/large indexes, the error paths, `--verbose`, `--debug`, paths with
