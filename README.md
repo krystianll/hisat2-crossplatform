@@ -153,7 +153,8 @@ index checks, and the same `(INFO)` / `(ERR)` messages and exit codes. With no
 arguments, `-h` or `--version` the aligner prints its own usage or version, as
 with the script.
 
-The launchers were compared with the scripts on 43 command lines, covering
+The launchers were compared with the scripts on 43 command lines
+([`tests/`](tests/README.md); `tests/run_parity.sh` reruns it), covering
 those options, gzip and FASTA input, stdin, small and large indexes, every
 error path and index building. Output files, stdout, stderr and exit codes are
 identical, except for these deliberate differences:
