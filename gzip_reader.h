@@ -1,14 +1,17 @@
 /*
  * gzip_reader.h
  *
- * Thin zlib wrapper for streaming (optionally gzip-compressed) read input.
+ * Thin zlib/libbz2 wrapper for streaming (optionally gzip- or
+ * bzip2-compressed) read input.
  *
- * Isolated in its own translation unit so that <zlib.h> never leaks into
- * filebuf.h (or anything that includes it): callers see only an opaque
+ * Isolated in its own translation unit so that <zlib.h> and <bzlib.h> never
+ * leak into filebuf.h (or anything that includes it): callers see only an opaque
  * handle (void*) and a handful of C-linkage functions.  zlib's gz* API
  * transparently reads BOTH gzip-compressed and plain files, so a single
  * code path replaces the previous "decompress to a temp file first" launcher
- * step -- no multi-GB FASTQ is ever written to disk.
+ * step -- no multi-GB FASTQ is ever written to disk. A bzip2 file (which the
+ * upstream Perl wrapper decompressed through `bzip2 -dc`) is recognised by
+ * its header bytes, not its name, and read through libbz2.
  *
  * Added for the deeptoolsr bundle; upstream hisat2 has no native gzip
  * support in its read parser (unlike its sibling bowtie2).  The feature is
@@ -24,7 +27,9 @@
 extern "C" {
 #endif
 
-/* Open a file path for reading. Handles gzip and plain files transparently.
+/* Open a file path for reading. Handles gzip, bzip2 and plain files
+ * transparently (bzip2 is detected only in files that can be rewound, so a
+ * named pipe is read as gzip or plain, as before).
  * Returns an opaque handle, or NULL if the file could not be opened (the
  * caller distinguishes this from EOF, exactly as a failed fopen did). */
 void* gzr_open(const char* path);
@@ -33,6 +38,7 @@ void* gzr_open(const char* path);
  * and plain input transparently, so a piped `.gz` on stdin works. The fd is
  * dup'd, so closing the handle does not close the caller's original fd. On
  * Windows the fd must already be in binary mode (see _setmode in main()).
+ * Not bzip2: a pipe cannot be rewound after sniffing its header.
  * Returns an opaque handle, or NULL on failure. */
 void* gzr_dopen(int fd);
 

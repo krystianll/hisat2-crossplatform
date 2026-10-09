@@ -2,11 +2,12 @@
 
 Writes into the directory given as argv[1]:
   ref.fa           two random chromosomes
-  se.fq / se.fq.gz single-end: aligning reads (lengths 100 and 75) + random reads
+  se.fq / se.fq.gz / se.fq.bz2
+                   single-end: aligning reads (lengths 100 and 75) + random reads
   m1.fq / m2.fq    paired: concordant pairs (--fr) + random pairs
   se.fa            FASTA reads (for -f)
 """
-import gzip, os, random, sys
+import bz2, gzip, os, random, sys
 
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
@@ -46,6 +47,8 @@ with open(os.path.join(out, "se.fq"), "w", newline="\n") as f:
     for n, s in se:
         f.write(f"@{n}\n{s}\n+\n{'I' * len(s)}\n")
 with open(os.path.join(out, "se.fq"), "rb") as src, gzip.open(os.path.join(out, "se.fq.gz"), "wb") as dst:
+    dst.write(src.read())
+with open(os.path.join(out, "se.fq"), "rb") as src, bz2.open(os.path.join(out, "se.fq.bz2"), "wb") as dst:
     dst.write(src.read())
 with open(os.path.join(out, "se.fa"), "w", newline="\n") as f:
     for n, s in se:

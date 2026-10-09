@@ -3,8 +3,8 @@
 A minimal patched copy of [**HISAT2**](https://github.com/DaehwanKimLab/hisat2)
 (2.2.3 / git-master base) that builds and runs natively on **Linux, macOS
 (Intel + Apple Silicon), and Windows (x64 + ARM64)**, and reads
-**gzip-compressed FASTQ directly** — no Perl wrapper, no `gzip.exe`, no temp
-files.
+**gzip- and bzip2-compressed FASTQ directly** — no Perl wrapper, no `gzip.exe`,
+no temp files.
 
 For HISAT2's documentation, options, and canonical source, see the upstream
 repository: <https://github.com/DaehwanKimLab/hisat2>. **This README covers only
@@ -20,7 +20,7 @@ from upstream.
 
 ## Building from source
 
-HISAT2 links only `-lpthread` and (now) `-lz`; there is no separate library to
+HISAT2 links only `-lpthread` and (now) `-lz` and `-lbz2`; there is no separate library to
 build first. Run every command **from this directory** (the one containing
 `Makefile`). On Windows the build is **native MinGW** — *not* MSVC, and *not*
 the Cygwin-style "MSYS2 MSYS" shell.
@@ -43,7 +43,7 @@ section for why it must be forced there.
 ### Linux — x86-64 / ARM64
 
 ```bash
-sudo apt install build-essential make zlib1g-dev     # Debian/Ubuntu
+sudo apt install build-essential make zlib1g-dev libbz2-dev   # Debian/Ubuntu
 make
 ```
 
@@ -53,7 +53,7 @@ binaries plus `hisat2-repeat`.
 
 ### macOS — Intel / Apple Silicon
 
-zlib ships with the system SDK; Apple clang is fine.
+zlib and libbz2 ship with the system SDK; Apple clang is fine.
 
 ```bash
 make
@@ -78,9 +78,9 @@ strip hisat2.exe hisat2-build.exe hisat2-inspect.exe \
       hisat2-inspect-s.exe hisat2-inspect-l.exe hisat2-repeat.exe
 ```
 
-The default target also builds the three launchers (`hisat2.exe`,
-`hisat2-build.exe`, `hisat2-inspect.exe`; see below), which is why bzip2 is
-needed. `-static -static-libgcc -static-libstdc++` folds the
+Every binary reads bzip2 input, and the three launchers (`hisat2.exe`,
+`hisat2-build.exe`, `hisat2-inspect.exe`; see below) also write it, which is why
+bzip2 is needed. `-static -static-libgcc -static-libstdc++` folds the
 GCC/libstdc++/winpthread, zlib **and bzip2** runtimes into each `.exe`, so nothing but stock Windows DLLs is
 needed on a clean machine. The Makefile builds with `-g3`; stripping removes
 ~90% of the size.
@@ -122,6 +122,9 @@ grep -c -v '^@' out.sam                              # expect the mapped-read co
 Running `hisat2-align-s`/`-l` **directly** is the point of the native-gzip patch:
 `.gz` (and plain) reads — from files **or piped on stdin (`-U -`)** — stream in
 with no `hisat2` wrapper, no `gzip.exe`, and no intermediate decompressed file.
+bzip2 read files stream in the same way; they are recognised by their first
+bytes, not their name. A pipe (stdin or a named pipe) is read as gzip or plain
+only, because it cannot be rewound after its first bytes are checked.
 The binaries are self-contained — check with `ldd` (Linux/Windows) or `otool -L`
 (macOS); only system libraries should appear.
 
@@ -153,18 +156,18 @@ index checks, and the same `(INFO)` / `(ERR)` messages and exit codes. With no
 arguments, `-h` or `--version` the aligner prints its own usage or version, as
 with the script.
 
-The launchers were compared with the scripts on 43 command lines
+The launchers were compared with the scripts on 44 command lines
 ([`tests/`](tests/README.md); `tests/run_parity.sh` reruns it), covering
-those options, gzip and FASTA input, stdin, small and large indexes, every
+those options, gzip, bzip2 and FASTA input, stdin, small and large indexes, every
 error path and index building. Output files, stdout, stderr and exit codes are
 identical, except for these deliberate differences:
 
 - `--verbose` prints the `(INFO)` lines whenever it is given. The Perl wrapper
   drops them as soon as a read file is on the command line (an option-parsing
   quirk).
-- Gzip read files are passed to the binary as they are, because it reads them
-  natively. The Perl wrapper decompresses them through a temporary pipe, so only
-  the command line recorded in the SAM `@PG` header differs.
+- Gzip and bzip2 read files are passed to the binary as they are, because it
+  reads them natively. The Perl wrapper decompresses them through a temporary
+  pipe, so only the command line recorded in the SAM `@PG` header differs.
 - Paths containing spaces work. The Perl wrapper runs the binary through an
   unquoted shell command line, which splits them.
 - `--un=<file>`, `-S<file>` and `--output=<file>` forms are honoured; the Perl
@@ -178,9 +181,6 @@ hisat2_launcher.c -lbz2 -lz`).
 
 ### Known limitations on Windows
 
-- **`.bz2` read files are not read.** The aligner binary reads gzip natively
-  but not bzip2 (the Perl wrapper decompressed both). Decompress `.bz2` reads
-  first or recompress them with gzip.
 - **`hisat2-build` reads plain FASTA.** Reference gzip streaming is not wired up
   (only the read/aligner path is); pass an uncompressed reference, or ship a
   prebuilt index.
@@ -207,10 +207,10 @@ on Linux/macOS, so they too are portable and applied unconditionally.
 | `hisat2_main.cpp` | `#ifdef _WIN32`: also `_setmode(_fileno(stdin), _O_BINARY)` | A `.gz` (or plain) stream piped on stdin (`-U -`) must be read as raw binary, else text-mode CRLF translation corrupts the compressed bytes. |
 | `hisat2.cpp` | Alignment-summary and novel-splice-site `ofstream` opened `ios::binary` | Same CRLF fix for the two remaining text sidecar files the aligner writes. |
 | `repeat_builder.cpp` | `.rep.*.seed` and the `saveRepeats` outputs opened with `ios_base::binary` | Same CRLF fix for `hisat2-repeat`'s text outputs. |
-| `gzip_reader.h` / `gzip_reader.cpp` *(new)* | A thin zlib wrapper (`gzr_open`/`gzr_dopen`/`read`/`rewind`/`close`) behind an opaque handle. `<zlib.h>` is confined to this one translation unit; the header is C/C++-portable (`extern "C"` under `__cplusplus`). `gzr_read` fills its buffer in a loop and checks `gzerror` at end-of-stream. | **Adds native streaming gzip input** with no header-wide zlib dependency. The fill-loop + `gzerror` check is required: a truncated/corrupt stream must fail loudly, not be silently treated as EOF (which would drop the tail of the input and still exit 0). `gzr_dopen` (dup + `gzdopen`) extends the same path to a piped stdin. |
+| `gzip_reader.h` / `gzip_reader.cpp` *(new)* | A thin zlib/libbz2 wrapper (`gzr_open`/`gzr_dopen`/`read`/`rewind`/`close`) behind an opaque handle. `gzr_open` checks a rewindable file's first bytes for the bzip2 header and reads such a file through libbz2 (concatenated streams, as `bzip2 -dc`); everything else goes through zlib. `<zlib.h>` and `<bzlib.h>` are confined to this one translation unit; the header is C/C++-portable (`extern "C"` under `__cplusplus`). `gzr_read` fills its buffer in a loop and checks `gzerror` at end-of-stream. | **Adds native streaming gzip and bzip2 input** with no header-wide zlib/libbz2 dependency. The fill-loop + `gzerror` check is required: a truncated/corrupt stream must fail loudly, not be silently treated as EOF (which would drop the tail of the input and still exit 0). `gzr_dopen` (dup + `gzdopen`) extends the same path to a piped stdin. |
 | `filebuf.h` | `FileBuf` gains a 4th backend (`void* _gz`) alongside `FILE*`/`ifstream`/`istream`, wired at the single `peek()` refill point plus `init/isOpen/close/reset/newGzFile` | Routes read input through the zlib reader without disturbing any other `FileBuf` user (index/reference readers keep the untouched `fread` path). |
 | `pat.h` | `PatternSource::open()` opens read files via `gzr_open`, and stdin (`-U -`) via `gzr_dopen(fileno(stdin))`; zlib reads gzip **and** plain transparently | Single choke point: gzip decompression happens inside the aligner, so `.gz` reads (from files *or* stdin) need no external step. Only this call site changed. |
-| `Makefile` | `gzip_reader.cpp` added to `SHARED_CPPS`; `-lz` added to `LIBS` | Compile/link the zlib reader into every binary. `-static` folds `libz.a` in on Windows. |
+| `Makefile` | `gzip_reader.cpp` added to `SHARED_CPPS`; `-lbz2 -lz` added to `LIBS` | Compile/link the reader into every binary. `-static` folds `libz.a` and `libbz2.a` in on Windows. |
 | `Makefile` | Disable `BOWTIE_MM`/`BOWTIE_SHARED_MEM` when `$(OS)==Windows_NT` | Upstream only disables them when `uname` contains `MINGW`, which misses MSYS2 **CLANGARM64** (`uname`→`CLANG*_NT`) and any build driven from an MSYS/SSH shell (`MSYS_NT`); otherwise `reference.h`/`gfm.h` pull `<sys/mman.h>` (absent under MinGW) and the build fails. Keying off the shell-independent `$(OS)` fixes it. Verified on the ARM64 VM. |
 | `hisat2_launcher.c` *(new)* | Native C versions of the `hisat2` (Perl), `hisat2-build` and `hisat2-inspect` (Python) wrapper scripts, one source compiled per tool (`-DLAUNCH_ALIGN/BUILD/INSPECT`); the align launcher links zlib and libbz2 | On Windows a script cannot be run as a command, and the scripts also need Perl/Python and `gzip.exe`. The launchers build the same binary command lines and print the same messages (see "The launchers" above). |
 | `Makefile` | On `$(OS)==Windows_NT`, build `hisat2.exe`, `hisat2-build.exe`, `hisat2-inspect.exe` instead of upstream's `hisat2.bat` / `hisat2-build.bat` / `hisat2-inspect.bat` | The `.bat` files only called `perl` / `python` on the scripts. |
@@ -223,8 +223,9 @@ Windows-specific, and prefer isolating new functionality in its own translation
 unit over threading it through shared headers:
 
 - **New functionality lives in its own unit.** `gzip_reader.{h,cpp}` holds all
-  zlib code; `filebuf.h` sees only an opaque `void*` and four function decls, so
-  `<zlib.h>` never enters the broadly-included headers.
+  zlib and libbz2 code; `filebuf.h` sees only an opaque `void*` and four
+  function decls, so `<zlib.h>` and `<bzlib.h>` never enter the broadly-included
+  headers.
 - **Integration edits stay at one choke point.** Gzip input is wired in only at
   `FileBuf::peek()`'s refill and the single `pat.h` open site; no other read-file
   call site changed.
@@ -246,6 +247,6 @@ The Windows recipes above produce a **static** binary intended for personal use.
 - **Own use:** the static binary is fine as-is.
 - **Redistributing the binary:** HISAT2 is **GPL-3.0**; bundle its license and
   source (or a written offer) along with the notices of everything compiled in —
-  zlib, and on Windows the statically linked GCC/libstdc++/winpthread runtimes.
+  zlib, bzip2, and on Windows the statically linked GCC/libstdc++/winpthread runtimes.
   The simplest way to satisfy the runtime-relink terms is to build **without
   `-static`** so those become replaceable DLLs, then ship each DLL's license.

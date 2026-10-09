@@ -29,6 +29,7 @@ CASES = [
     ("align-version", "hisat2", ["--version"], None),
     ("se-plain", "hisat2", ["-x", "{TD}/idx", "-U", "{TD}/se.fq", "-S", "out.sam"], None),
     ("se-gz", "hisat2", ["-x", "{TD}/idx", "-U", "{TD}/se.fq.gz", "-S", "out.sam"], None),
+    ("se-bz2", "hisat2", ["-x", "{TD}/idx", "-U", "{TD}/se.fq.bz2", "-S", "out.sam"], None),
     ("se-stdout", "hisat2", ["-x", "{TD}/idx", "-U", "{TD}/se.fq"], None),
     ("se-stdin", "hisat2", ["-x", "{TD}/idx", "-U", "-", "-S", "out.sam"], "se.fq"),
     ("se-commalist", "hisat2", ["-x", "{TD}/idx", "-U", "{TD}/se.fq,{TD}/se.fq.gz", "-S", "out.sam"], None),
@@ -163,6 +164,7 @@ def compare(r, n):
 EXPECTED = {
     "se-gz": "@PG command line: Perl feeds gzip input through a temporary pipe",
     "se-commalist": "@PG command line: Perl feeds gzip input through a temporary pipe",
+    "se-bz2": "@PG command line: Perl feeds bzip2 input through a temporary pipe",
     "verbose-reads": "Perl drops the (INFO) lines once a read file is given",
     "space-path": "Perl runs the binary through an unquoted shell command line",
     "debug-missing": "the 'cannot run' message comes from sh under Perl",
