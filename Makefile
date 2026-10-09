@@ -75,7 +75,9 @@ else
 	ARM = 0
 endif
 
-EXTRA_FLAGS += -std=c++11
+# `override` keeps these when EXTRA_FLAGS is given on the command line (e.g.
+# EXTRA_FLAGS="-static" on Windows), which would otherwise replace them.
+override EXTRA_FLAGS += -std=c++11
 # Use -iquote . (not -I.) so the VERSION file does not shadow libc++'s
 # <version> header on case-insensitive filesystems (e.g. macOS). Local headers
 # are all included with quotes, so quoted-include search suffices.
@@ -85,7 +87,7 @@ ifeq (1,$(ARM))
 	INC += -iquote third_party
 else
 	# x86: POPCNT path + vendored <cpuid.h>.
-	EXTRA_FLAGS += -DPOPCNT_CAPABILITY
+	override EXTRA_FLAGS += -DPOPCNT_CAPABILITY
 	INC += -I third_party
 endif
 
@@ -575,7 +577,7 @@ hisat2-bin: $(BIN_PKG_LIST) $(HISAT2_BIN_LIST) $(HISAT2_BIN_LIST_AUX)
 	mkdir .bin.tmp
 	mkdir .bin.tmp/hisat2-$(VERSION)
 	if [ -f hisat2.exe ] ; then \
-		zip tmp.zip $(BIN_PKG_LIST) $(addsuffix .exe,$(HISAT2_BIN_LIST) $(HISAT2_BIN_LIST_AUX)) ; \
+		zip tmp.zip $(BIN_PKG_LIST) $(addsuffix .exe,$(filter-out $(HISAT2_LAUNCHERS),$(HISAT2_BIN_LIST)) $(HISAT2_BIN_LIST_AUX)) $(HISAT2_LAUNCHERS) ; \
 	else \
 		zip tmp.zip $(BIN_PKG_LIST) $(HISAT2_BIN_LIST) $(HISAT2_BIN_LIST_AUX) ; \
 	fi

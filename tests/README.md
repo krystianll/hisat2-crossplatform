@@ -9,14 +9,22 @@ gzip/bzip2 outputs are compared by compression type plus decompressed content.
 
 - `gen_td.py`: writes deterministic synthetic test data (two random
   chromosomes; single-end reads of lengths 100 and 75 plus random reads; paired
-  reads; FASTA reads).
+  reads; FASTA reads; a FASTQ file with a blank line).
 - `parity.py`: the comparison harness. The case list (`CASES`) covers plain,
   gzip, bzip2 and FASTA input, stdin, comma lists, `-c`, attached `-1`/`-2`, the
   read-length check, `--un`/`--al`/`--un-conc`/`--al-conc`/`--al-conc-disc`
   (plain, `-gz`, `-bz2`, `%` / extension / directory targets), `--no-unal`,
-  small/large indexes, the error paths, `--verbose`, `--debug`, paths with
-  spaces and non-ASCII characters, index building and inspection.
+  small/large indexes, the error paths, `--verbose`, `--debug`, `--` (wrapper
+  options before it, binary options after it, `--log-file`), a read-length
+  check that stops at a blank line, paths with spaces and non-ASCII characters,
+  index building and inspection.
 - `run_parity.sh`: sets everything up and runs the comparison on Linux/macOS.
+- `run_extra.sh`: two checks the scripts cannot be compared on, run after
+  `run_parity.sh` (re-uses its directory): a debug build (`hisat2 --debug`
+  with `hisat2-align-s-debug`, which has assertions on) must align plain, gzip,
+  bzip2, stdin, paired and FASTA input exactly like the release binary; and a
+  failing write (a file-size limit, as on a full disk) of each output the
+  launcher writes itself must give an `(ERR)` message and a nonzero exit code.
 
 ## Linux / macOS: launchers vs the scripts
 
@@ -26,6 +34,8 @@ root:
 ```bash
 make hisat2-align-s hisat2-align-l hisat2-build-s hisat2-build-l hisat2-inspect-s hisat2-inspect-l
 tests/run_parity.sh /tmp/h2parity          # optional 2nd argument: case-name filter
+make hisat2-align-s-debug                    # then the extra checks:
+tests/run_extra.sh /tmp/h2parity
 ```
 
 The script copies the binaries next to the upstream scripts (`ref/`, with

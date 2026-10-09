@@ -106,7 +106,7 @@ public:
 	 * Get the next character of input and advance.
 	 */
 	int get() {
-		assert(_in != NULL || _inf != NULL || _ins != NULL);
+		assert(_in != NULL || _inf != NULL || _ins != NULL || _gz != NULL);
 		int c = peek();
 		if(c != -1) {
 			_cur++;
@@ -202,7 +202,7 @@ public:
 	 * Occasionally we'll need to read in a new buffer's worth of data.
 	 */
 	int peek() {
-		assert(_in != NULL || _inf != NULL || _ins != NULL);
+		assert(_in != NULL || _inf != NULL || _ins != NULL || _gz != NULL);
 		assert_leq(_cur, _buf_sz);
 		if(_cur == _buf_sz) {
 			if(_done) {

@@ -6,6 +6,8 @@ Writes into the directory given as argv[1]:
                    single-end: aligning reads (lengths 100 and 75) + random reads
   m1.fq / m2.fq    paired: concordant pairs (--fr) + random pairs
   se.fa            FASTA reads (for -f)
+  blank.fq         a read, a blank line, then reads of lengths 50 and 4 (the
+                   read-length check stops at the blank line)
 """
 import bz2, gzip, os, random, sys
 
@@ -67,4 +69,10 @@ with open(os.path.join(out, "m1.fq"), "w", newline="\n") as f1, \
             a, b = rand_seq(100), rand_seq(100)
         f1.write(f"@p{i}/1\n{a}\n+\n{'I' * 100}\n")
         f2.write(f"@p{i}/2\n{b}\n+\n{'I' * 100}\n")
+# Own random source, so the files above stay the same.
+rb = random.Random(11)
+with open(os.path.join(out, "blank.fq"), "w", newline="\n") as f:
+    for i, length in enumerate((75, 50, 4)):
+        s = "".join(rb.choice("ACGT") for _ in range(length))
+        f.write(("\n" if i == 1 else "") + f"@b{i}\n{s}\n+\n{'I' * length}\n")
 print("test data in", out)

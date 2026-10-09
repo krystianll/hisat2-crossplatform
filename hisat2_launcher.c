@@ -30,6 +30,7 @@
 typedef struct _stat64 stat_t;
 #define stat_fn _stat64
 #else
+#include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -171,9 +172,29 @@ static char *win_quote(const char *a)
 	return o;
 }
 
+/* If the launcher is killed (TerminateProcess, e.g. a GUI's Cancel), the
+ * binary must not keep running and writing output. The launcher joins a job
+ * object that kills its members when its last handle closes; that handle is
+ * held (not inherited) by the launcher alone, and the binary started later
+ * is in the job from its first instruction. Ctrl-C is unaffected. If any step
+ * fails, the binary simply runs outside a job, as before. */
+static void kill_with_launcher(void)
+{
+	JOBOBJECT_EXTENDED_LIMIT_INFORMATION li;
+	static int done;
+	HANDLE job;
+	if (done++ || !(job = CreateJobObjectA(NULL, NULL))) return;
+	memset(&li, 0, sizeof li);
+	li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+	if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &li, sizeof li) ||
+	    !AssignProcessToJobObject(job, GetCurrentProcess()))
+		CloseHandle(job);                     /* otherwise kept open until we exit */
+}
+
 static int start(const char *prog, char **argv, FILE **out, child *c)
 {
 	list q = {0};
+	kill_with_launcher();
 	for (int i = 0; argv[i]; i++) {
 		char *s = win_quote(argv[i]);
 		push(&q, s);
@@ -199,12 +220,28 @@ static int start(const char *prog, char **argv, FILE **out, child *c)
 	return *c == -1 ? -1 : 0;
 }
 
-static int finish(child *c, int *sig)
+static int finish(child *c, int *sig)          /* a crash gives a negative NTSTATUS */
 {
 	int st;
 	*sig = 0;
 	return _cwait(&st, *c, 0) == -1 ? 1 : st;
 }
+
+#ifdef LAUNCH_ALIGN
+static const char *ntstatus_name(unsigned st)
+{
+	static const struct { unsigned n; const char *s; } names[] = {
+		{0xC0000005u, "access violation"}, {0xC00000FDu, "stack overflow"},
+		{0xC0000017u, "out of memory"}, {0xC000001Du, "illegal instruction"},
+		{0xC0000094u, "integer division by zero"}, {0xC0000409u, "stack buffer overrun / fast fail"},
+		{0xC0000374u, "heap corruption"}, {0xC0000006u, "in-page error"},
+		{0xC000013Au, "Ctrl-C"}, {0x80000003u, "breakpoint"},
+		{0xC0000135u, "DLL not found"}, {0xC0000139u, "entry point not found"},
+		{0xC000007Bu, "invalid image format"}, {0, NULL}};
+	for (int i = 0; names[i].s; i++) if (names[i].n == st) return names[i].s;
+	return "unknown";
+}
+#endif
 #else
 typedef pid_t child;
 
@@ -352,6 +389,21 @@ static int has_token(const char *s)        /* line[1:].split()[0] exists */
 
 typedef struct { size_t len, count; } lencount;
 
+/* Count one read of length `len` in `lc` (n entries, sorted by length). */
+static void count_len(lencount **lc, size_t *n, size_t *cap, size_t len)
+{
+	size_t lo = 0, hi = *n;
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		if ((*lc)[mid].len < len) lo = mid + 1; else hi = mid;
+	}
+	if (lo < *n && (*lc)[lo].len == len) { (*lc)[lo].count++; return; }
+	if (*n == *cap) *lc = xrealloc(*lc, (*cap = *cap ? 2 * *cap : 16) * sizeof **lc);
+	memmove(*lc + lo + 1, *lc + lo, (*n - lo) * sizeof **lc);
+	(*lc)[lo] = (lencount){len, 1};
+	(*n)++;
+}
+
 static int by_count_then_len(const void *a, const void *b)
 {
 	const lencount *x = a, *y = b;
@@ -395,7 +447,8 @@ static char *read_lengths(const char *fn)
 		r->gz = gzopen(fn, "rb");
 	}
 
-	size_t *counts = NULL, ncounts = 0, cap = 0, total = 0;
+	lencount *lc = NULL;
+	size_t nlc = 0, lccap = 0, cap = 0, total = 0;
 	char *line = NULL;
 	if (!marker) {
 		fputs("Warning: Unsupported file format\n", stderr);
@@ -412,7 +465,7 @@ static char *read_lengths(const char *fn)
 		goto done;
 	}
 	for (;;) {
-		if (!has_token(l + 1)) {
+		if (!l[0] || !has_token(l + 1)) {    /* a blank line: line[1:] is empty */
 			fputs("Warning: list index out of range\n", stderr);
 			break;
 		}
@@ -423,13 +476,7 @@ static char *read_lengths(const char *fn)
 		} else {                         /* FASTA: sequence lines up to the next '>' */
 			while ((l = rs_line(r, &line, &cap)) && l[0] != '>') len += stripped_len(l);
 		}
-		if (len >= ncounts) {
-			size_t m = 2 * len + 1;
-			counts = xrealloc(counts, m * sizeof *counts);
-			memset(counts + ncounts, 0, (m - ncounts) * sizeof *counts);
-			ncounts = m;
-		}
-		counts[len]++;
+		count_len(&lc, &nlc, &lccap, len);
 		if (++total >= MAX_READS) break;
 		if (marker == '@') {
 			rs_line(r, &line, &cap);
@@ -444,54 +491,66 @@ done:
 	if (r->bz) { int err; BZ2_bzReadClose(&err, r->bz); }
 	if (r->f) fclose(r->f);
 	free(r);
-	if (!total) { free(counts); return NULL; }
-	lencount *lc = xrealloc(NULL, ncounts * sizeof *lc);
-	size_t k = 0;
-	for (size_t i = 0; i < ncounts; i++)
-		if (counts[i]) lc[k++] = (lencount){i, counts[i]};
-	qsort(lc, k, sizeof *lc, by_count_then_len);
+	if (!total) { free(lc); return NULL; }
+	qsort(lc, nlc, sizeof *lc, by_count_then_len);
 	char *s = xstrdup("");
-	for (size_t i = 0; i < k; i++) {
+	for (size_t i = 0; i < nlc; i++) {
 		char *t = fmt("%s%s%zu", s, i ? "," : "", lc[i].len);
 		free(s);
 		s = t;
 	}
 	free(lc);
-	free(counts);
 	return strcmp(s, "0") ? s : NULL;
 }
 
 /* ---- --un/--al/--un-conc/--al-conc[-disc] outputs ---- */
 
-typedef struct { FILE *f; gzFile gz; BZFILE *bz; } sink;
+typedef struct { FILE *f; gzFile gz; BZFILE *bz; const char *opt, *path; } sink;
 
 static int sink_open(sink *s, const char *path, int comp)
 {
 	memset(s, 0, sizeof *s);
+	s->path = path;
 	if (comp == 1) return (s->gz = gzopen(path, "wb")) != NULL;
 	if (!(s->f = fopen(path, "wb"))) return 0;
 	if (comp == 2) {
 		int err;
 		s->bz = BZ2_bzWriteOpen(&err, s->f, 9, 0, 0);
-		if (err != BZ_OK) return 0;
+		if (err != BZ_OK) { fclose(s->f); s->f = NULL; s->bz = NULL; return 0; }
 	}
 	return 1;
+}
+
+/* A failed write or close (e.g. a full disk) ends the run, as a truncated
+ * output must not look like a success. */
+static void write_failed(const char *what, const char *path, int err)
+{
+	fail(err ? err : 255, "Could not write %s '%s': %s\n", what, path, err ? strerror(err) : "write error");
+}
+
+static void sink_failed(sink *s)
+{
+	char *what = fmt("--%s output file", s->opt);
+	write_failed(what, s->path, errno);
 }
 
 static void sink_write(sink *s, const char *p, size_t n)
 {
 	int err;
-	if (s->gz) gzwrite(s->gz, p, (unsigned)n);
-	else if (s->bz) BZ2_bzWrite(&err, s->bz, (void *)p, (int)n);
-	else fwrite(p, 1, n, s->f);
+	errno = 0;
+	if (s->gz) { if (n && gzwrite(s->gz, p, (unsigned)n) <= 0) sink_failed(s); }
+	else if (s->bz) { BZ2_bzWrite(&err, s->bz, (void *)p, (int)n); if (err != BZ_OK) sink_failed(s); }
+	else if (fwrite(p, 1, n, s->f) != n) sink_failed(s);
 }
 
 static void sink_close(sink *s)
 {
-	int err;
-	if (s->gz) gzclose(s->gz);
-	if (s->bz) BZ2_bzWriteClose(&err, s->bz, 0, NULL, NULL);
-	if (s->f) fclose(s->f);
+	int err = BZ_OK, bad = 0;
+	errno = 0;
+	if (s->gz) bad = gzclose(s->gz) != Z_OK;
+	if (s->bz) { BZ2_bzWriteClose(&err, s->bz, 0, NULL, NULL); bad = err != BZ_OK; }
+	if (s->f) bad |= fclose(s->f) != 0;
+	if (bad) sink_failed(s);
 }
 
 /* Wrapper read-redirection options, in the Perl loop's order. */
@@ -538,6 +597,54 @@ static char *in_dir(const char *dir, const char *file)
 	return fmt("%s%s%s", dir, sep ? "" : (char[]){SEP, 0}, file);
 }
 
+/* The script's GetOptions("pass_through", "no_ignore_case") call on the
+ * wrapper arguments: -name, --name or +name, a unique abbreviation, the value
+ * as name=value or the next token. Other tokens are ignored, as the script
+ * drops them. Only the reads, --verbose and --log-file have an effect. */
+enum { O_1, O_2, O_U, O_TEMP, O_BAM, O_PIPES, O_REF, O_KEEP, O_VERBOSE, O_LOG, O_HELP };
+static const struct { const char *name; int id, takes; } wopt[] = {
+	{"1", O_1, 1}, {"2", O_2, 1}, {"reads", O_U, 1}, {"U", O_U, 1}, {"temp-directory", O_TEMP, 1},
+	{"bam", O_BAM, 0}, {"no-named-pipes", O_PIPES, 0}, {"ref-string", O_REF, 1},
+	{"reference-string", O_REF, 1}, {"keep", O_KEEP, 0}, {"verbose", O_VERBOSE, 0},
+	{"log-file", O_LOG, 1}, {"help", O_HELP, 0}, {"h", O_HELP, 0}};
+#define NWOPT (int)(sizeof wopt / sizeof *wopt)
+
+static int wopt_find(const char *name, size_t n)
+{
+	int hit = -1, ambiguous = 0;
+	for (int i = 0; i < NWOPT && n; i++) {
+		if (strncmp(wopt[i].name, name, n)) continue;
+		if (!wopt[i].name[n]) return i;          /* exact match */
+		if (hit >= 0 && wopt[hit].id != wopt[i].id) ambiguous = 1;
+		hit = hit < 0 ? i : hit;
+	}
+	return ambiguous ? -1 : hit;
+}
+
+static void wrapper_options(const list *a, list *reads[3], const char **log, const char **ref)
+{
+	for (int i = 0; i < a->n; i++) {
+		const char *t = a->v[i];
+		size_t pre = t[0] == '-' && t[1] == '-' ? 2 : (t[0] == '-' || t[0] == '+');
+		if (!pre) continue;
+		const char *name = t + pre, *eq = strchr(name, '=');
+		int o = wopt_find(name, eq ? (size_t)(eq - name) : strlen(name));
+		if (o < 0 || (eq && (!wopt[o].takes || !eq[1]))) continue;
+		const char *val = NULL;
+		if (wopt[o].takes) {
+			if (eq) val = eq + 1;
+			else if (i + 1 < a->n) val = a->v[++i];
+			else continue;
+		}
+		switch (wopt[o].id) {
+		case O_1: case O_2: case O_U: push(reads[wopt[o].id], val); break;
+		case O_VERBOSE: verbose = 1; break;
+		case O_LOG: *log = val; break;
+		case O_REF: *ref = val; break;
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	binary_stdio();
@@ -546,9 +653,16 @@ int main(int argc, char **argv)
 	if (!is_file(prog_s))
 		fail(2, "Expected hisat2 to be in same directory with hisat2-align-s and hisat2-align-l:\n%s\n", dir);
 
-	/* Arguments, with surrounding whitespace removed (as Perl does). */
-	list args = {0};
-	for (int i = 1; i < argc; i++) {
+	/* With `--`, the arguments before it are for the wrapper only and those
+	 * after it go to the binary (every `--` is dropped); without it all go to
+	 * the binary. Binary arguments lose surrounding whitespace (as in Perl). */
+	int dd = 1;
+	while (dd < argc && strcmp(argv[dd], "--")) dd++;
+	if (dd == argc) dd = 0;
+	list args = {0}, wrap = {0};
+	for (int i = 1; i < dd; i++) push(&wrap, argv[i]);
+	for (int i = dd + 1; i < argc; i++) {
+		if (!strcmp(argv[i], "--")) continue;
 		const char *s = argv[i], *e = s + strlen(s);
 		while (*s == ' ' || (*s >= '\t' && *s <= '\r')) s++;
 		while (e > s && (e[-1] == ' ' || (e[-1] >= '\t' && e[-1] <= '\r'))) e--;
@@ -558,7 +672,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Capture the arguments the wrapper handles; the rest go to the binary. */
-	list bin = {0}, wrap = {0}, unps = {0}, m1 = {0}, m2 = {0};
+	list bin = {0}, unps = {0}, m1 = {0}, m2 = {0};
 	int debug = 0, no_unal = 0, large = 0, skip_stat = 0, seq_in_args = 0;
 	char *read_fn[NREAD] = {0};
 	int read_comp[NREAD] = {0};
@@ -637,6 +751,26 @@ int main(int argc, char **argv)
 			else push(&kept, a);
 		}
 		bin = kept;
+	}
+
+	/* As the script, take the reads (and --verbose, --log-file) from the
+	 * wrapper arguments: those before `--` plus the reads found above. */
+	const char *log_fn = NULL, *ref_str = NULL;
+	list *rl3[3] = {&m1, &m2, &unps};
+	m1.n = m2.n = unps.n = 0;
+	wrapper_options(wrap.n ? &wrap : &bin, rl3, &log_fn, &ref_str);
+	if (ref_str) fail(1, "--ref-string / --reference-string is not supported by this launcher; build an index with hisat2-build\n");
+	if (log_fn) {                            /* stderr (also the binary's) goes to the log file */
+		fflush(stderr);
+#ifdef _WIN32
+		int fd = _open(log_fn, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE);
+		if (fd < 0 || _dup2(fd, 2)) fail(errno ? errno : 255, "Cannot redirect to log file %s.\n", log_fn);
+		_close(fd);
+#else
+		int fd = open(log_fn, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (fd < 0 || dup2(fd, 2) < 0) fail(errno ? errno : 255, "Cannot redirect to log file %s.\n", log_fn);
+		close(fd);
+#endif
 	}
 
 	char *w = join(wrap.v, wrap.n, " "), *b = join(bin.v, bin.n, " ");
@@ -746,6 +880,7 @@ int main(int argc, char **argv)
 				char *fn = *base ? xstrdup(t) : in_dir(pdir, fmt("%s-seqs", read_opt[k]));
 				if (!sink_open(&out[k][0], fn, read_comp[k]))
 					fail(errno ? errno : 255, "Could not open --%s output file '%s'\n", read_opt[k], t);
+				out[k][0].opt = read_opt[k];
 			} else {
 				char *fn = *base ? xstrdup(base) : fmt("%s-mate", read_opt[k]);
 				char *fns[2];
@@ -758,9 +893,11 @@ int main(int argc, char **argv)
 					else mf = fmt("%s.%d", fn, m + 1);
 					fns[m] = in_dir(pdir, mf);
 				}
-				for (int m = 0; m < 2; m++)
+				for (int m = 0; m < 2; m++) {
 					if (!sink_open(&out[k][m], fns[m], read_comp[k]))
 						fail(errno ? errno : 255, "Could not open --%s mate-%d output file '%s'\n", read_opt[k], m + 1, fns[m]);
+					out[k][m].opt = read_opt[k];
+				}
 			}
 			open_[k] = 1;
 			nsink++;
@@ -792,18 +929,25 @@ int main(int argc, char **argv)
 					}
 				}
 			}
-			if (!filt) { fputs(line, sam); fputc('\n', sam); }
+			if (!filt && (fputs(line, sam) == EOF || fputc('\n', sam) == EOF))
+				write_failed("output file", cap_out, errno);
 		}
 		for (int k = 0; k < NREAD; k++)
 			if (open_[k]) {
 				sink_close(&out[k][0]);
 				if (k != UN && k != AL) sink_close(&out[k][1]);
 			}
-		if (sam != stdout) fclose(sam); else fflush(stdout);
+		if (sam != stdout ? fclose(sam) != 0 : fflush(stdout) != 0) write_failed("output file", cap_out, errno);
 		fclose(ht);
 	}
 
 	int sig, ret = finish(&c, &sig);
+#ifdef _WIN32
+	if (ret < 0) {                           /* crashed: report the NTSTATUS, exit with it */
+		fprintf(stderr, "(ERR): hisat2-align died with exception 0x%08X (%s)\n", (unsigned)ret, ntstatus_name((unsigned)ret));
+		return ret;
+	}
+#endif
 	if (ret < 0) {
 		static const struct { int n; const char *s; } names[] = {
 #ifndef _WIN32

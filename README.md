@@ -82,8 +82,16 @@ Every binary reads bzip2 input, and the three launchers (`hisat2.exe`,
 `hisat2-build.exe`, `hisat2-inspect.exe`; see below) also write it, which is why
 bzip2 is needed. `-static -static-libgcc -static-libstdc++` folds the
 GCC/libstdc++/winpthread, zlib **and bzip2** runtimes into each `.exe`, so nothing but stock Windows DLLs is
-needed on a clean machine. The Makefile builds with `-g3`; stripping removes
-~90% of the size.
+needed on a clean machine. The Makefile adds its own `-std=c++11` and (x64)
+`-DPOPCNT_CAPABILITY` to a command-line `EXTRA_FLAGS` (`override`), so the
+static recipe keeps the POPCNT path. The Makefile builds with `-g3`; stripping
+removes ~90% of the size.
+
+This static build is the recipe for a self-contained copy. The ngs-tools
+installer builds **dynamically** instead (plain `mingw32-make <target>`, no
+`-static`) and ships the toolchain, zlib and bzip2 DLLs (`libstdc++-6.dll`,
+`zlib1.dll`, `libbz2-1.dll`, ...) next to the executables; see
+"Redistribution & licensing" below.
 
 ### Windows — ARM64  (MSYS2 **CLANGARM64** shell)
 
@@ -152,11 +160,14 @@ wrapper does on top: the read-length check (`--read-lengths`, from the first
 10000 reads; `--skip-read-lengths` turns it off), the `--un` / `--al` /
 `--un-conc` / `--al-conc` / `--al-conc-disc` outputs (plain, `-gz` or `-bz2`)
 and `--no-unal` through the binary's `--passthrough` mode, the read-file and
-index checks, and the same `(INFO)` / `(ERR)` messages and exit codes. With no
-arguments, `-h` or `--version` the aligner prints its own usage or version, as
-with the script.
+index checks, and the same `(INFO)` / `(ERR)` messages and exit codes. As with
+the script, `--` splits the command line: the arguments before it are for the
+wrapper only (read files given as `-U`/`--reads`/`-1`/`-2`, which are not split
+at commas there, `--verbose` and `--log-file`; anything else before `--` is
+ignored) and those after it go to the binary. With no arguments, `-h` or
+`--version` the aligner prints its own usage or version, as with the script.
 
-The launchers were compared with the scripts on 44 command lines
+The launchers were compared with the scripts on 50 command lines
 ([`tests/`](tests/README.md); `tests/run_parity.sh` reruns it), covering
 those options, gzip, bzip2 and FASTA input, stdin, small and large indexes, every
 error path and index building. Output files, stdout, stderr and exit codes are
@@ -174,12 +185,32 @@ identical, except for these deliberate differences:
   wrapper mishandles some of them.
 - When a binary cannot be started (e.g. `--debug` without a `-debug` build), the
   error comes from the launcher rather than from `sh`.
+- `--ref-string` / `--reference-string` (index from a sequence on the command
+  line) is not supported: the launcher stops with an `(ERR)` message. The Perl
+  wrapper builds a temporary index with `hisat2-build` from `PATH`.
+- A failed write or close of an output the launcher writes itself (`-S` with
+  `--un*`/`--al*`/`--no-unal`, and those read files) stops it with
+  `(ERR): Could not write ...` and a nonzero exit code (the system error
+  number, as for its other errors). The Perl wrapper ignores such errors, so a
+  full disk gives truncated files and exit code 0.
+- On Windows, if the aligner crashes, the launcher reports the Windows
+  exception code (`(ERR): hisat2-align died with exception 0xC0000005 (access
+  violation)`) and exits with it. If the launcher itself is killed (e.g. by a
+  GUI's Cancel, `TerminateProcess`), the binary it started is killed too (job
+  object). On Linux/macOS signals are reported as by the script.
 
 On Linux and macOS the upstream scripts are used as before (the launchers can
 be built there too, e.g. for testing: `cc -DLAUNCH_ALIGN -o hisat2
 hisat2_launcher.c -lbz2 -lz`).
 
 ### Known limitations on Windows
+
+- **Very many distinct read lengths.** `--read-lengths` lists every distinct
+  length among the first 10000 reads, and a Windows command line is limited to
+  32767 characters. Ordinary (even trimmed) short reads have at most a few
+  hundred distinct lengths, well within the limit; a read file with thousands of
+  different lengths can make the launcher fail to start the binary. Use
+  `--skip-read-lengths` there.
 
 - **`hisat2-build` reads plain FASTA.** Reference gzip streaming is not wired up
   (only the read/aligner path is); pass an uncompressed reference, or ship a
@@ -210,12 +241,13 @@ on Linux/macOS, so they too are portable and applied unconditionally.
 | `hisat2.cpp` | Alignment-summary and novel-splice-site `ofstream` opened `ios::binary` | Same CRLF fix for the two remaining text sidecar files the aligner writes. |
 | `repeat_builder.cpp` | `.rep.*.seed` and the `saveRepeats` outputs opened with `ios_base::binary` | Same CRLF fix for `hisat2-repeat`'s text outputs. |
 | `gzip_reader.h` / `gzip_reader.cpp` *(new)* | A thin zlib/libbz2 wrapper (`gzr_open`/`gzr_dopen`/`read`/`rewind`/`close`) behind an opaque handle. `gzr_open` checks a rewindable file's first bytes for the bzip2 header and reads such a file through libbz2 (concatenated streams, as `bzip2 -dc`); everything else goes through zlib. `<zlib.h>` and `<bzlib.h>` are confined to this one translation unit; the header is C/C++-portable (`extern "C"` under `__cplusplus`). `gzr_read` fills its buffer in a loop and checks `gzerror` at end-of-stream. | **Adds native streaming gzip and bzip2 input** with no header-wide zlib/libbz2 dependency. The fill-loop + `gzerror` check is required: a truncated/corrupt stream must fail loudly, not be silently treated as EOF (which would drop the tail of the input and still exit 0). `gzr_dopen` (dup + `gzdopen`) extends the same path to a piped stdin. |
-| `filebuf.h` | `FileBuf` gains a 4th backend (`void* _gz`) alongside `FILE*`/`ifstream`/`istream`, wired at the single `peek()` refill point plus `init/isOpen/close/reset/newGzFile` | Routes read input through the zlib reader without disturbing any other `FileBuf` user (index/reference readers keep the untouched `fread` path). |
+| `filebuf.h` | `FileBuf` gains a 4th backend (`void* _gz`) alongside `FILE*`/`ifstream`/`istream`, wired at the single `peek()` refill point plus `init/isOpen/close/reset/newGzFile`; the `get()`/`peek()` "a stream is open" assertions accept it | Routes read input through the zlib reader without disturbing any other `FileBuf` user (index/reference readers keep the untouched `fread` path). |
 | `pat.h` | `PatternSource::open()` opens read files via `gzr_open`, and stdin (`-U -`) via `gzr_dopen(fileno(stdin))`; zlib reads gzip **and** plain transparently | Single choke point: gzip decompression happens inside the aligner, so `.gz` reads (from files *or* stdin) need no external step. Only this call site changed. |
 | `Makefile` | `gzip_reader.cpp` added to `SHARED_CPPS`; `-lbz2 -lz` added to `LIBS` | Compile/link the reader into every binary. `-static` folds `libz.a` and `libbz2.a` in on Windows. |
 | `Makefile` | Disable `BOWTIE_MM`/`BOWTIE_SHARED_MEM` when `$(OS)==Windows_NT` | Upstream only disables them when `uname` contains `MINGW`, which misses MSYS2 **CLANGARM64** (`uname`→`CLANG*_NT`) and any build driven from an MSYS/SSH shell (`MSYS_NT`); otherwise `reference.h`/`gfm.h` pull `<sys/mman.h>` (absent under MinGW) and the build fails. Keying off the shell-independent `$(OS)` fixes it. Verified on the ARM64 VM. |
 | `hisat2_launcher.c` *(new)* | Native C versions of the `hisat2` (Perl), `hisat2-build` and `hisat2-inspect` (Python) wrapper scripts, one source compiled per tool (`-DLAUNCH_ALIGN/BUILD/INSPECT`); the align launcher links zlib and libbz2 | On Windows a script cannot be run as a command, and the scripts also need Perl/Python and `gzip.exe`. The launchers build the same binary command lines and print the same messages (see "The launchers" above). |
-| `Makefile` | On `$(OS)==Windows_NT`, build `hisat2.exe`, `hisat2-build.exe`, `hisat2-inspect.exe` instead of upstream's `hisat2.bat` / `hisat2-build.bat` / `hisat2-inspect.bat` | The `.bat` files only called `perl` / `python` on the scripts. |
+| `Makefile` | On `$(OS)==Windows_NT`, build `hisat2.exe`, `hisat2-build.exe`, `hisat2-inspect.exe` instead of upstream's `hisat2.bat` / `hisat2-build.bat` / `hisat2-inspect.bat`; `hisat2-bin` zips them without adding a second `.exe` | The `.bat` files only called `perl` / `python` on the scripts. |
+| `Makefile` | `override EXTRA_FLAGS += -std=c++11` and `override EXTRA_FLAGS += -DPOPCNT_CAPABILITY` | A command-line `EXTRA_FLAGS` (the Windows `-static` recipe) replaced both, silently dropping the x64 POPCNT path. |
 
 ### Patch layout and maintenance
 

@@ -61,6 +61,15 @@ CASES = [
     # Paths with spaces and non-ASCII characters (setup copies the reads there).
     ("space-path", "hisat2", ["-x", "{TD}/idx", "-U", "{CWD}/a b/r 1.fq", "--un", "{CWD}/a b/un 1.fq", "-S", "{CWD}/a b/o 1.sam"], None),
     ("nonascii-path", "hisat2", ["-x", "{TD}/idx", "-U", "{CWD}/za\u017c\u00f3\u0142\u0107/r\u0119ads.fq", "--un-gz", "{CWD}/za\u017c\u00f3\u0142\u0107/\u0105.fq", "-S", "{CWD}/za\u017c\u00f3\u0142\u0107/o.sam"], None),
+    # Read-length check stopping at a blank line (the script warns "list index out of range").
+    ("blank-line-rl", "hisat2", ["-x", "{TD}/idx", "-U", "{TD}/blank.fq", "-S", "out.sam"], None),
+    # `--`: wrapper options before it (only reads, --verbose and --log-file act; the rest
+    # are dropped), binary options after it.
+    ("dd-first", "hisat2", ["--", "-x", "{TD}/idx", "-U", "{TD}/se.fq", "-S", "out.sam"], None),
+    ("dd-split", "hisat2", ["-U", "{TD}/se.fq", "--no-unal", "-p", "2", "--", "-x", "{TD}/idx", "--un", "un.fq", "-S", "out.sam"], None),
+    ("dd-verbose-pe", "hisat2", ["--verbose", "-1", "{TD}/m1.fq", "--2={TD}/m2.fq", "--", "-x", "{TD}/idx", "-S", "out.sam"], None),
+    ("dd-log-file", "hisat2", ["--log-file", "log.txt", "--reads", "{TD}/se.fq", "--", "-x", "{TD}/idx", "-S", "out.sam"], None),
+    ("dd-commalist", "hisat2", ["-U", "{TD}/se.fq,{TD}/se.fq", "--", "-x", "{TD}/idx", "-S", "out.sam"], None),
     ("build-noargs", "hisat2-build", [], None),
     ("build", "hisat2-build", ["-q", "{TD}/ref.fa", "bidx"], None),
     ("build-verbose", "hisat2-build", ["-q", "--verbose", "{TD}/ref.fa", "bidx"], None),
