@@ -186,9 +186,11 @@ hisat2_launcher.c -lbz2 -lz`).
   prebuilt index.
 - **Non-ASCII paths** (outside the Windows ANSI code page) need a UTF-8
   application manifest next to each `.exe`, because the binaries use the
-  narrow-character file APIs. The ngs-tools installer ships one per executable
-  (`<tool>.exe.manifest` declaring `<activeCodePage>UTF-8</activeCodePage>`,
-  Windows 10 1903+); without it such paths are misread.
+  narrow-character file APIs. The ngs-tools installer embeds one in every
+  executable (declaring `<activeCodePage>UTF-8</activeCodePage>`, Windows 10
+  1903+); without it such paths are misread. A side-by-side `<tool>.exe.manifest`
+  only works for a build that embeds no manifest of its own; UCRT64 GCC embeds a
+  default one, so Windows ignores the side-by-side file there.
 
 ---
 
