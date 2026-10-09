@@ -293,8 +293,12 @@ GENERAL_LIST = $(wildcard scripts/*.sh) \
 	TUTORIAL \
 	VERSION
 
-ifeq (1,$(WINDOWS))
-	HISAT2_BIN_LIST := $(HISAT2_BIN_LIST) hisat2.bat hisat2-build.bat hisat2-inspect.bat 
+# On Windows the hisat2 / hisat2-build / hisat2-inspect wrapper scripts (Perl,
+# Python) cannot be run as commands, so native launchers are built instead
+# (hisat2_launcher.c, compiled once per tool; rules below).
+HISAT2_LAUNCHERS = hisat2.exe hisat2-build.exe hisat2-inspect.exe
+ifeq ($(OS),Windows_NT)
+	HISAT2_BIN_LIST := $(HISAT2_BIN_LIST) $(HISAT2_LAUNCHERS)
 endif
 
 # This is helpful on Windows under MinGW/MSYS, where Make might go for
@@ -540,17 +544,16 @@ repeatexp:
 
 hisat2: ;
 
-hisat2.bat:
-	echo "@echo off" > hisat2.bat
-	echo "perl %~dp0/hisat2 %*" >> hisat2.bat
+LAUNCHER_FLAGS = -O2 -Wall $(filter-out -std=%,$(EXTRA_FLAGS))
 
-hisat2-build.bat:
-	echo "@echo off" > hisat2-build.bat
-	echo "python %~dp0/hisat2-build %*" >> hisat2-build.bat
+hisat2.exe: hisat2_launcher.c
+	$(CC) $(LAUNCHER_FLAGS) -DLAUNCH_ALIGN -o $@ $< -lbz2 -lz
 
-hisat2-inspect.bat:
-	echo "@echo off" > hisat2-inspect.bat
-	echo "python %~dp0/hisat2-inspect %*" >> hisat2-inspect.bat
+hisat2-build.exe: hisat2_launcher.c
+	$(CC) $(LAUNCHER_FLAGS) -DLAUNCH_BUILD -o $@ $<
+
+hisat2-inspect.exe: hisat2_launcher.c
+	$(CC) $(LAUNCHER_FLAGS) -DLAUNCH_INSPECT -o $@ $<
 
 
 .PHONY: hisat2-src

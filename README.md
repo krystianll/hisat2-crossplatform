@@ -69,16 +69,19 @@ Install MSYS2 (<https://www.msys2.org>) and open the **"MSYS2 UCRT64"** shell
 ```bash
 pacman -S --needed \
   mingw-w64-ucrt-x86_64-gcc  mingw-w64-ucrt-x86_64-make \
-  mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-git
+  mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-bzip2 mingw-w64-ucrt-x86_64-git
 
 mingw32-make EXTRA_FLAGS="-static -static-libgcc -static-libstdc++"
 
-strip hisat2-align-s.exe hisat2-align-l.exe hisat2-build-s.exe hisat2-build-l.exe \
+strip hisat2.exe hisat2-build.exe hisat2-inspect.exe \
+      hisat2-align-s.exe hisat2-align-l.exe hisat2-build-s.exe hisat2-build-l.exe \
       hisat2-inspect-s.exe hisat2-inspect-l.exe hisat2-repeat.exe
 ```
 
-`-static -static-libgcc -static-libstdc++` folds the GCC/libstdc++/winpthread
-**and zlib** runtimes into each `.exe`, so nothing but stock Windows DLLs is
+The default target also builds the three launchers (`hisat2.exe`,
+`hisat2-build.exe`, `hisat2-inspect.exe`; see below), which is why bzip2 is
+needed. `-static -static-libgcc -static-libstdc++` folds the
+GCC/libstdc++/winpthread, zlib **and bzip2** runtimes into each `.exe`, so nothing but stock Windows DLLs is
 needed on a clean machine. The Makefile builds with `-g3`; stripping removes
 ~90% of the size.
 
@@ -89,12 +92,14 @@ Open the **"MSYS2 CLANGARM64"** shell.
 ```bash
 pacman -S --needed \
   mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-make \
-  mingw-w64-clang-aarch64-zlib  mingw-w64-clang-aarch64-git \
+  mingw-w64-clang-aarch64-zlib  mingw-w64-clang-aarch64-bzip2 \
+  mingw-w64-clang-aarch64-git \
   mingw-w64-clang-aarch64-gcc-compat
 
 mingw32-make ARCH=aarch64 EXTRA_FLAGS="-static"
 
-strip hisat2-align-s.exe hisat2-align-l.exe hisat2-build-s.exe hisat2-build-l.exe \
+strip hisat2.exe hisat2-build.exe hisat2-inspect.exe \
+      hisat2-align-s.exe hisat2-align-l.exe hisat2-build-s.exe hisat2-build-l.exe \
       hisat2-inspect-s.exe hisat2-inspect-l.exe hisat2-repeat.exe
 ```
 
@@ -120,57 +125,69 @@ with no `hisat2` wrapper, no `gzip.exe`, and no intermediate decompressed file.
 The binaries are self-contained — check with `ldd` (Linux/Windows) or `otool -L`
 (macOS); only system libraries should appear.
 
-### The `hisat2` launcher
+### The `hisat2`, `hisat2-build` and `hisat2-inspect` launchers
 
-Upstream's `hisat2` command is a **Perl** wrapper. This tree ships a
-dependency-free **PowerShell** launcher, [`hisat2.ps1`](hisat2.ps1), instead. It
-reproduces the wrapper's behavior:
+Upstream runs the aligner and index tools through wrapper scripts: `hisat2` is
+**Perl**, `hisat2-build` and `hisat2-inspect` are **Python**. On Windows a script
+is not a runnable command (cmd, Explorer and other programs only start `.exe`
+files), so on Windows the Makefile builds native launchers instead:
+`hisat2.exe`, `hisat2-build.exe` and `hisat2-inspect.exe`, all from
+[`hisat2_launcher.c`](hisat2_launcher.c). They need no Perl, Python, `gzip.exe`
+or PowerShell, and are used exactly like the scripts:
 
-- picks `hisat2-align-s` vs `-l` from the index (or `--large-index`), and the
-  `-debug` variant with `--debug`;
-- forwards all other options to the aligner (`--wrapper basic-0`); gzip input is
-  handled inside the binary, so nothing is decompressed here;
-- implements the read-redirection options the align binary does **not** handle
-  itself — `--un` / `--al` / `--un-conc` / `--al-conc` / `--al-conc-disc` (and
-  their `-gz` / `-bz2` compressed forms) and `--no-unal` — by driving the
-  binary's `--passthrough` mode and demultiplexing the reads, exactly as the Perl
-  wrapper does (verified byte-for-byte against it).
-
-```powershell
-.\hisat2.ps1 -x <index> -1 r1.fq.gz -2 r2.fq.gz -S out.sam
-.\hisat2.ps1 -x <index> -U reads.fq.gz --un-gz unaligned.fq -S out.sam
-# HISAT2_BIN   dir holding the align binaries (default: script dir, then .\bin, then PATH)
-# HISAT2_ECHO  print the constructed command without running it
+```bat
+hisat2 -x <index> -1 r1.fq.gz -2 r2.fq.gz -S out.sam
+hisat2 -x <index> -U reads.fq.gz --un-gz unaligned.fq -S out.sam
+hisat2-build ref.fa <index>
+hisat2-inspect -s <index>
 ```
 
-`-gz` redirected output is produced natively (.NET, no `gzip.exe`); `-bz2` (rare)
-requires `bzip2` on PATH. As in the Perl wrapper, a compressed output keeps the
-plain mangled name (e.g. `out.1.fq` containing gzip data; no `.gz` suffix added).
+Like the scripts, each launcher picks the small- or large-index binary
+(`-s`/`-l`, or the `-debug` variant with `--debug`), adds `--wrapper basic-0`,
+and runs the binary from its own directory. `hisat2` also does what the Perl
+wrapper does on top: the read-length check (`--read-lengths`, from the first
+10000 reads; `--skip-read-lengths` turns it off), the `--un` / `--al` /
+`--un-conc` / `--al-conc` / `--al-conc-disc` outputs (plain, `-gz` or `-bz2`)
+and `--no-unal` through the binary's `--passthrough` mode, the read-file and
+index checks, and the same `(INFO)` / `(ERR)` messages and exit codes. With no
+arguments, `-h` or `--version` the aligner prints its own usage or version, as
+with the script.
 
-If you already have **Perl** on the machine (e.g. Strawberry Perl), the original
-upstream `hisat2` Perl wrapper also works — it just additionally needs `gzip.exe`
-on PATH for its own `.gz` handling, whereas `hisat2.ps1` needs neither Perl nor
-`gzip.exe`. Either way you can also skip the wrapper and call
-`hisat2-align-s`/`-l` directly.
+The launchers were compared with the scripts on 43 command lines, covering
+those options, gzip and FASTA input, stdin, small and large indexes, every
+error path and index building. Output files, stdout, stderr and exit codes are
+identical, except for these deliberate differences:
 
-Index building has a matching launcher, [`hisat2_build.ps1`](hisat2_build.ps1):
-it selects `hisat2-build-s`/`-l` (by `--large-index` or reference size), adds the
-`.exe` suffix, and runs the binary as a child process so the caller gets the real
-exit code — fixing the two POSIX assumptions in the upstream `hisat2-build`
-launcher (no `.exe` suffix; `os.execv`, which does not replace the process on
-Windows). Same `HISAT2_BIN`/`HISAT2_ECHO` environment variables.
+- `--verbose` prints the `(INFO)` lines whenever it is given. The Perl wrapper
+  drops them as soon as a read file is on the command line (an option-parsing
+  quirk).
+- Gzip read files are passed to the binary as they are, because it reads them
+  natively. The Perl wrapper decompresses them through a temporary pipe, so only
+  the command line recorded in the SAM `@PG` header differs.
+- Paths containing spaces work. The Perl wrapper runs the binary through an
+  unquoted shell command line, which splits them.
+- `--un=<file>`, `-S<file>` and `--output=<file>` forms are honoured; the Perl
+  wrapper mishandles some of them.
+- When a binary cannot be started (e.g. `--debug` without a `-debug` build), the
+  error comes from the launcher rather than from `sh`.
 
-```powershell
-.\hisat2_build.ps1 [options] <reference_in> <ht2_index_base>
-```
+On Linux and macOS the upstream scripts are used as before (the launchers can
+be built there too, e.g. for testing: `cc -DLAUNCH_ALIGN -o hisat2
+hisat2_launcher.c -lbz2 -lz`).
 
 ### Known limitations on Windows
 
+- **`.bz2` read files are not read.** The aligner binary reads gzip natively
+  but not bzip2 (the Perl wrapper decompressed both). Decompress `.bz2` reads
+  first or recompress them with gzip.
 - **`hisat2-build` reads plain FASTA.** Reference gzip streaming is not wired up
   (only the read/aligner path is); pass an uncompressed reference, or ship a
   prebuilt index.
-- **Non-ANSI (Unicode) paths** are not supported by the narrow-character
-  filesystem interfaces.
+- **Non-ASCII paths** (outside the Windows ANSI code page) need a UTF-8
+  application manifest next to each `.exe`, because the binaries use the
+  narrow-character file APIs. The ngs-tools installer ships one per executable
+  (`<tool>.exe.manifest` declaring `<activeCodePage>UTF-8</activeCodePage>`,
+  Windows 10 1903+); without it such paths are misread.
 
 ---
 
@@ -194,6 +211,8 @@ on Linux/macOS, so they too are portable and applied unconditionally.
 | `pat.h` | `PatternSource::open()` opens read files via `gzr_open`, and stdin (`-U -`) via `gzr_dopen(fileno(stdin))`; zlib reads gzip **and** plain transparently | Single choke point: gzip decompression happens inside the aligner, so `.gz` reads (from files *or* stdin) need no external step. Only this call site changed. |
 | `Makefile` | `gzip_reader.cpp` added to `SHARED_CPPS`; `-lz` added to `LIBS` | Compile/link the zlib reader into every binary. `-static` folds `libz.a` in on Windows. |
 | `Makefile` | Disable `BOWTIE_MM`/`BOWTIE_SHARED_MEM` when `$(OS)==Windows_NT` | Upstream only disables them when `uname` contains `MINGW`, which misses MSYS2 **CLANGARM64** (`uname`→`CLANG*_NT`) and any build driven from an MSYS/SSH shell (`MSYS_NT`); otherwise `reference.h`/`gfm.h` pull `<sys/mman.h>` (absent under MinGW) and the build fails. Keying off the shell-independent `$(OS)` fixes it. Verified on the ARM64 VM. |
+| `hisat2_launcher.c` *(new)* | Native C versions of the `hisat2` (Perl), `hisat2-build` and `hisat2-inspect` (Python) wrapper scripts, one source compiled per tool (`-DLAUNCH_ALIGN/BUILD/INSPECT`); the align launcher links zlib and libbz2 | On Windows a script cannot be run as a command, and the scripts also need Perl/Python and `gzip.exe`. The launchers build the same binary command lines and print the same messages (see "The launchers" above). |
+| `Makefile` | On `$(OS)==Windows_NT`, build `hisat2.exe`, `hisat2-build.exe`, `hisat2-inspect.exe` instead of upstream's `hisat2.bat` / `hisat2-build.bat` / `hisat2-inspect.bat` | The `.bat` files only called `perl` / `python` on the scripts. |
 
 ### Patch layout and maintenance
 

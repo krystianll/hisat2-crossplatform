@@ -10,7 +10,7 @@
  * code path replaces the previous "decompress to a temp file first" launcher
  * step -- no multi-GB FASTQ is ever written to disk.
  *
- * Added for the deeptoolsplus bundle; upstream hisat2 has no native gzip
+ * Added for the deeptoolsr bundle; upstream hisat2 has no native gzip
  * support in its read parser (unlike its sibling bowtie2).  The feature is
  * useful on every platform, so it is intentionally NOT #ifdef-guarded.
  */
