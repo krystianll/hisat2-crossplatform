@@ -275,6 +275,17 @@ strip details, and the CRLF regression guard `check_hisat2_crlf.sh`) is in
 
 ---
 
+## Related work
+
+[win-ngs](https://github.com/win-ngs) publishes community Windows builds of
+several NGS tools, including
+[hisat2-windows-build](https://github.com/win-ngs/hisat2-windows-build)
+(x64, MSYS2 UCRT64, PowerShell launchers). This fork was developed
+independently and shares no code with it. Both apply the usual Windows
+line-ending fixes (binary-mode output files and standard streams); this fork
+also builds natively for ARM64, reads gzip and bzip2 input inside the aligner,
+and replaces the wrapper scripts with native launchers.
+
 ## Redistribution & licensing
 
 The Windows recipes above produce a **static** binary intended for personal use.
