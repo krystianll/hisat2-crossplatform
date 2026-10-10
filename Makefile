@@ -332,9 +332,13 @@ repeat: hisat2-repeat
 
 repeat-debug: hisat2-repeat-debug
 
+# Shown by --version. Override for distributed builds (e.g. BUILD_HOST=release)
+# so the binary does not carry the build machine's name.
+BUILD_HOST ?= $(shell hostname)
+
 DEFS=-fno-strict-aliasing \
      -DHISAT2_VERSION="\"`cat VERSION`\"" \
-     -DBUILD_HOST="\"`hostname`\"" \
+     -DBUILD_HOST="\"$(BUILD_HOST)\"" \
      -DBUILD_TIME="\"`date`\"" \
      -DCOMPILER_VERSION="\"`$(CXX) -v 2>&1 | tail -1`\"" \
      $(FILE_FLAGS) \
