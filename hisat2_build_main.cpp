@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include "tokenize.h"
 #include "ds.h"
-#ifdef _WIN32
+#ifdef _WIN32 // hisat2-crossplatform: binary stdout/stderr (LF-only output)
 #include <io.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -46,7 +46,7 @@ extern "C" {
  * bowtie-build.
  */
 int main(int argc, const char **argv) {
-#ifdef _WIN32
+#ifdef _WIN32 // hisat2-crossplatform: LF-only stdout/stderr
 	_setmode(_fileno(stdout), _O_BINARY);
 	_setmode(_fileno(stderr), _O_BINARY);
 #endif

@@ -1,4 +1,7 @@
 /*
+ * hisat2-crossplatform: this file is a hisat2-crossplatform addition (not in
+ * upstream HISAT2).
+ *
  * hisat2_launcher.c - native versions of the `hisat2`, `hisat2-build` and
  * `hisat2-inspect` wrapper scripts (upstream: Perl and Python).
  *

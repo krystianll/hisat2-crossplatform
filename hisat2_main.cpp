@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include "tokenize.h"
 #include "ds.h"
-#ifdef _WIN32
+#ifdef _WIN32 // hisat2-crossplatform: binary stdin/stdout/stderr (LF-only, raw gz on stdin)
 #include <io.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -45,8 +45,8 @@ extern "C" {
  * bowtie.
  */
 int main(int argc, const char **argv) {
-#ifdef _WIN32
-	_setmode(_fileno(stdin),  _O_BINARY); // gz/plain reads piped on stdin ("-")
+#ifdef _WIN32 // hisat2-crossplatform: binary std streams
+	_setmode(_fileno(stdin),  _O_BINARY); // hisat2-crossplatform: gz/plain reads piped on stdin ("-")
 	_setmode(_fileno(stdout), _O_BINARY);
 	_setmode(_fileno(stderr), _O_BINARY);
 #endif

@@ -1,6 +1,9 @@
 /*
  * gzip_reader.cpp
  *
+ * hisat2-crossplatform: this file is a hisat2-crossplatform addition (not in
+ * upstream HISAT2).
+ *
  * Implementation of the thin zlib/libbz2 wrapper declared in gzip_reader.h.
  * This is the ONLY translation unit that includes <zlib.h> and <bzlib.h>;
  * everything else deals in

@@ -268,6 +268,10 @@ unit over threading it through shared headers:
   plus one `_setmode` block per `main()`. They are not hidden behind broad macros.
 - **`auto_ptr` → `unique_ptr`** is a direct, unguarded modernization.
 
+Every edit to an upstream file is marked with a `hisat2-crossplatform:` comment, so
+`grep -rn "hisat2-crossplatform:" --include='*.cpp' --include='*.h' --include=Makefile .`
+lists them.
+
 The from-scratch build runbook (toolchain install, the `auto_ptr`/CRLF perl
 one-liners against a *fresh* upstream clone, ARM emulation trap, static-link and
 strip details, and the CRLF regression guard `check_hisat2_crlf.sh`) is in

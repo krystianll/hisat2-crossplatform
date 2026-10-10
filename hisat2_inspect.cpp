@@ -22,7 +22,7 @@
 #include <getopt.h>
 #include <stdexcept>
 
-#ifdef _WIN32
+#ifdef _WIN32 // hisat2-crossplatform: binary stdout/stderr (LF-only output)
 #include <io.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -728,7 +728,7 @@ static void driver(
  * main function.  Parses command-line arguments.
  */
 int main(int argc, char **argv) {
-#ifdef _WIN32
+#ifdef _WIN32 // hisat2-crossplatform: LF-only stdout/stderr
 	_setmode(_fileno(stdout), _O_BINARY);
 	_setmode(_fileno(stderr), _O_BINARY);
 #endif

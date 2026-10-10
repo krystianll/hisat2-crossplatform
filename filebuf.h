@@ -28,7 +28,7 @@
 #include <stdint.h>
 #include <stdexcept>
 #include "assert_helpers.h"
-#include "gzip_reader.h"
+#include "gzip_reader.h" // hisat2-crossplatform: native gz/bz2 input
 
 /**
  * Simple, fast helper for determining if a character is a newline.
@@ -83,14 +83,14 @@ public:
 	 * Return true iff there is a stream ready to read.
 	 */
 	bool isOpen() {
-		return _in != NULL || _inf != NULL || _ins != NULL || _gz != NULL;
+		return _in != NULL || _inf != NULL || _ins != NULL || _gz != NULL; // hisat2-crossplatform: native gz/bz2 input
 	}
 
 	/**
 	 * Close the input stream (if that's possible)
 	 */
 	void close() {
-		if(_gz != NULL) {
+		if(_gz != NULL) { // hisat2-crossplatform: native gz/bz2 input
 			gzr_close(_gz);
 			_gz = NULL;
 		} else if(_in != NULL && _in != stdin) {
@@ -106,7 +106,7 @@ public:
 	 * Get the next character of input and advance.
 	 */
 	int get() {
-		assert(_in != NULL || _inf != NULL || _ins != NULL || _gz != NULL);
+		assert(_in != NULL || _inf != NULL || _ins != NULL || _gz != NULL); // hisat2-crossplatform: native gz/bz2 input
 		int c = peek();
 		if(c != -1) {
 			_cur++;
@@ -129,14 +129,14 @@ public:
 		_in = in;
 		_inf = NULL;
 		_ins = NULL;
-		_gz = NULL;
+		_gz = NULL; // hisat2-crossplatform: native gz/bz2 input
 		_cur = BUF_SZ;
 		_buf_sz = BUF_SZ;
 		_done = false;
 	}
 
 	/**
-	 * Initialize the buffer with a new (optionally gzip-compressed) stream
+	 * hisat2-crossplatform: Initialize the buffer with a new (optionally gzip-compressed) stream
 	 * opened via gzr_open(). The FileBuf owns the handle and closes it.
 	 */
 	void newGzFile(void *gz) {
@@ -156,7 +156,7 @@ public:
 		_in = NULL;
 		_inf = __inf;
 		_ins = NULL;
-		_gz = NULL;
+		_gz = NULL; // hisat2-crossplatform: native gz/bz2 input
 		_cur = BUF_SZ;
 		_buf_sz = BUF_SZ;
 		_done = false;
@@ -169,7 +169,7 @@ public:
 		_in = NULL;
 		_inf = NULL;
 		_ins = __ins;
-		_gz = NULL;
+		_gz = NULL; // hisat2-crossplatform: native gz/bz2 input
 		_cur = BUF_SZ;
 		_buf_sz = BUF_SZ;
 		_done = false;
@@ -180,7 +180,7 @@ public:
 	 * stream.
 	 */
 	void reset() {
-		if(_gz != NULL) {
+		if(_gz != NULL) { // hisat2-crossplatform: native gz/bz2 input
 			gzr_rewind(_gz);
 		} else if(_inf != NULL) {
 			_inf->clear();
@@ -202,7 +202,7 @@ public:
 	 * Occasionally we'll need to read in a new buffer's worth of data.
 	 */
 	int peek() {
-		assert(_in != NULL || _inf != NULL || _ins != NULL || _gz != NULL);
+		assert(_in != NULL || _inf != NULL || _ins != NULL || _gz != NULL); // hisat2-crossplatform: native gz/bz2 input
 		assert_leq(_cur, _buf_sz);
 		if(_cur == _buf_sz) {
 			if(_done) {
@@ -212,7 +212,7 @@ public:
 			// Read a new buffer's worth of data
 			else {
 				// Get the next chunk
-				if(_gz != NULL) {
+				if(_gz != NULL) { // hisat2-crossplatform: native gz/bz2 input
 					_buf_sz = gzr_read(_gz, (char*)_buf, BUF_SZ);
 				} else if(_inf != NULL) {
 					_inf->read((char*)_buf, BUF_SZ);
@@ -457,7 +457,7 @@ private:
 		_in = NULL;
 		_inf = NULL;
 		_ins = NULL;
-		_gz = NULL;
+		_gz = NULL; // hisat2-crossplatform: native gz/bz2 input
 		_cur = _buf_sz = BUF_SZ;
 		_done = false;
 		_lastn_cur = 0;
@@ -468,7 +468,7 @@ private:
 	FILE     *_in;
 	std::ifstream *_inf;
 	std::istream  *_ins;
-	void     *_gz;   // opaque gzr handle (gzip_reader.h); NULL unless gz input
+	void     *_gz;   // hisat2-crossplatform: opaque gzr handle (gzip_reader.h); NULL unless gz input
 	size_t    _cur;
 	size_t    _buf_sz;
 	bool      _done;
@@ -558,7 +558,7 @@ public:
 	OutFileBuf(const std::string& out, bool binary = false) :
 		name_(out.c_str()), cur_(0), closed_(false)
 	{
-		out_ = fopen(out.c_str(), "wb");
+		out_ = fopen(out.c_str(), "wb"); // hisat2-crossplatform: always binary: no CRLF on Windows
 		if(out_ == NULL) {
 			std::cerr << "Error: Could not open alignment output file " << out.c_str() << std::endl;
 			throw 1;
@@ -574,7 +574,7 @@ public:
 		name_(out), cur_(0), closed_(false)
 	{
 		assert(out != NULL);
-		out_ = fopen(out, "wb");
+		out_ = fopen(out, "wb"); // hisat2-crossplatform: always binary: no CRLF on Windows
 		if(out_ == NULL) {
 			std::cerr << "Error: Could not open alignment output file " << out << std::endl;
 			throw 1;
@@ -598,7 +598,7 @@ public:
 	 */
 	void setFile(const char *out, bool binary = false) {
 		assert(out != NULL);
-		out_ = fopen(out, "wb");
+		out_ = fopen(out, "wb"); // hisat2-crossplatform: always binary: no CRLF on Windows
 		if(out_ == NULL) {
 			std::cerr << "Error: Could not open alignment output file " << out << std::endl;
 			throw 1;

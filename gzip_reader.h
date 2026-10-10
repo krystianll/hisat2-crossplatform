@@ -1,6 +1,9 @@
 /*
  * gzip_reader.h
  *
+ * hisat2-crossplatform: this file is a hisat2-crossplatform addition (not in
+ * upstream HISAT2).
+ *
  * Thin zlib/libbz2 wrapper for streaming (optionally gzip- or
  * bzip2-compressed) read input.
  *

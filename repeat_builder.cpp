@@ -3263,7 +3263,7 @@ void RepeatBuilder<TStr>::build(const RepeatParameter& rp)
     rpt_len_str = to_string(rp.min_repeat_len) + "-" + to_string(rp.max_repeat_len);
 
     string seed_filename = filename_ + ".rep." + rpt_len_str + ".seed";
-    ofstream fp(seed_filename.c_str(), ios_base::out | ios_base::binary);
+    ofstream fp(seed_filename.c_str(), ios_base::out | ios_base::binary); // hisat2-crossplatform: binary mode, no CRLF on Windows
 
     swaligner_.init_dyn(rp);
 
@@ -4024,7 +4024,7 @@ template<typename TStr>
 void RepeatBuilder<TStr>::saveRepeats(const RepeatParameter &rp)
 {
     ios_base::openmode mode = ios_base::out;
-    mode |= ios_base::binary;
+    mode |= ios_base::binary; // hisat2-crossplatform: binary mode, no CRLF on Windows
     if(rp.append_result) {
         mode |= ios_base::app;
     } else {
@@ -4087,7 +4087,7 @@ template<typename TStr>
 void RepeatBuilder<TStr>::saveConsensus(const RepeatParameter &rp,
                                         const string& repName) {
     ios_base::openmode mode = ios_base::out;
-    mode |= ios_base::binary;
+    mode |= ios_base::binary; // hisat2-crossplatform: binary mode, no CRLF on Windows
     if(rp.append_result) {
         mode |= ios_base::app;
     } else {

@@ -1182,11 +1182,11 @@ public:
 		EList<FileBuf*> is(EBWT_CAT);
 		RefReadInParams refparams(false /* color */, REF_READ_FORWARD, false, false);
 		// Adapt sequence strings to stringstreams open for input
-		unique_ptr<stringstream> ss(new stringstream());
+		unique_ptr<stringstream> ss(new stringstream()); // hisat2-crossplatform: auto_ptr removed in C++17
 		for(index_t i = 0; i < strs.size(); i++) {
 			(*ss) << ">" << i << endl << strs[i] << endl;
 		}
-		unique_ptr<FileBuf> fb(new FileBuf(ss.get()));
+		unique_ptr<FileBuf> fb(new FileBuf(ss.get())); // hisat2-crossplatform: auto_ptr removed in C++17
 		assert(!fb->eof());
 		assert(fb->get() == '>');
 		ASSERT_ONLY(fb->reset());

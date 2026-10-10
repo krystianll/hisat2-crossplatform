@@ -883,7 +883,7 @@ protected:
 	void open() {
 		if(fb_.isOpen()) fb_.close();
 		while(filecur_ < infiles_.size()) {
-			// Open read.  Both real files and stdin go through the zlib reader,
+			// hisat2-crossplatform: Open read.  Both real files and stdin go through the zlib reader,
 			// which transparently handles gzip and plain input (no separate
 			// decompression step needed).  On Windows stdin must be in binary
 			// mode first (done by _setmode in main()).

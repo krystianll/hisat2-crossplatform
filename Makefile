@@ -50,7 +50,7 @@ else
 	endif
 endif
 
-# The uname checks above miss two cases: MSYS2 CLANG64/CLANGARM64 shells report
+# hisat2-crossplatform: The uname checks above miss two cases: MSYS2 CLANG64/CLANGARM64 shells report
 # "CLANG*_NT", and building from an MSYS (or SSH) shell reports "MSYS_NT" even
 # when the compiler targets mingw. On native Windows there is no POSIX mmap /
 # SysV shm (reference.h/gfm.h would pull <sys/mman.h>, absent under MinGW), so
@@ -75,7 +75,7 @@ else
 	ARM = 0
 endif
 
-# `override` keeps these when EXTRA_FLAGS is given on the command line (e.g.
+# hisat2-crossplatform: `override` keeps these when EXTRA_FLAGS is given on the command line (e.g.
 # EXTRA_FLAGS="-static" on Windows), which would otherwise replace them.
 override EXTRA_FLAGS += -std=c++11
 # Use -iquote . (not -I.) so the VERSION file does not shadow libc++'s
@@ -87,6 +87,7 @@ ifeq (1,$(ARM))
 	INC += -iquote third_party
 else
 	# x86: POPCNT path + vendored <cpuid.h>.
+	# hisat2-crossplatform: override keeps this when EXTRA_FLAGS is set on the command line.
 	override EXTRA_FLAGS += -DPOPCNT_CAPABILITY
 	INC += -I third_party
 endif
@@ -132,8 +133,10 @@ ifeq (1,$(USE_SRA))
 	SEARCH_LIBS += -L$(NCBI_NGS_DIR)/lib64 -L$(NCBI_VDB_DIR)/lib64
 endif
 
+# hisat2-crossplatform: -lbz2 -lz for native gz/bz2 read input
 LIBS = $(PTHREAD_LIB) -lbz2 -lz
 
+# hisat2-crossplatform: gzip_reader.cpp (native gz/bz2 input) added to SHARED_CPPS
 SHARED_CPPS = ccnt_lut.cpp ref_read.cpp alphabet.cpp shmem.cpp \
 	edit.cpp gfm.cpp \
 	reference.cpp ds.cpp multikey_qsort.cpp limit.cpp \
@@ -295,7 +298,7 @@ GENERAL_LIST = $(wildcard scripts/*.sh) \
 	TUTORIAL \
 	VERSION
 
-# On Windows the hisat2 / hisat2-build / hisat2-inspect wrapper scripts (Perl,
+# hisat2-crossplatform: On Windows the hisat2 / hisat2-build / hisat2-inspect wrapper scripts (Perl,
 # Python) cannot be run as commands, so native launchers are built instead
 # (hisat2_launcher.c, compiled once per tool; rules below).
 HISAT2_LAUNCHERS = hisat2.exe hisat2-build.exe hisat2-inspect.exe
@@ -332,7 +335,7 @@ repeat: hisat2-repeat
 
 repeat-debug: hisat2-repeat-debug
 
-# Shown by --version. Override for distributed builds (e.g. BUILD_HOST=release)
+# hisat2-crossplatform: Shown by --version. Override for distributed builds (e.g. BUILD_HOST=release)
 # so the binary does not carry the build machine's name.
 BUILD_HOST ?= $(shell hostname)
 
@@ -550,6 +553,7 @@ repeatexp:
 
 hisat2: ;
 
+# hisat2-crossplatform: native .exe launchers replace the upstream .bat wrappers
 LAUNCHER_FLAGS = -O2 -Wall $(filter-out -std=%,$(EXTRA_FLAGS))
 
 hisat2.exe: hisat2_launcher.c
@@ -575,6 +579,7 @@ hisat2-src: $(SRC_PKG_LIST)
 	rm -rf .src.tmp
 
 .PHONY: hisat2-bin
+# hisat2-crossplatform: launchers (HISAT2_LAUNCHERS) are already .exe; no second suffix
 hisat2-bin: $(BIN_PKG_LIST) $(HISAT2_BIN_LIST) $(HISAT2_BIN_LIST_AUX)
 	chmod a+x scripts/*.sh scripts/*.pl
 	rm -rf .bin.tmp
