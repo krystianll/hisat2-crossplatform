@@ -186,6 +186,7 @@ EXPECTED_XPLAT = {
     "align-version": "--version prints build host, date and type sizes",
     "verbose-reads": "binary's verbose timestamps",
     "debug-missing": "Windows cannot start the missing binary at all (exit 1)",
+    "dd-commalist": "OS error text: the joined path has a second drive colon, invalid on Windows (EINVAL), missing elsewhere (ENOENT)",
 }
 
 
