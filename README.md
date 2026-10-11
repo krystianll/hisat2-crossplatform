@@ -272,10 +272,9 @@ Every edit to an upstream file is marked with a `hisat2-crossplatform:` comment,
 `grep -rn "hisat2-crossplatform:" --include='*.cpp' --include='*.h' --include=Makefile .`
 lists them.
 
-The from-scratch build runbook (toolchain install, the `auto_ptr`/CRLF perl
-one-liners against a *fresh* upstream clone, ARM emulation trap, static-link and
-strip details, and the CRLF regression guard `check_hisat2_crlf.sh`) is in
-[`../WINDOWS_BUILD.md`](../WINDOWS_BUILD.md) §3.
+The Windows summary and the checks to run after every rebuild (the CRLF
+regression guard `check_hisat2_crlf.sh` and the gzip check) are in
+[`../windows-build/tools.md`](../windows-build/tools.md#hisat2).
 
 ---
 
